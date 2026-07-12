@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Painel administrativo AZA para gerenciar obras e imóveis.">
+    <title>Admin AZA</title>
+    <link rel="icon" href="assets/logos/favicon.ico" sizes="any">
+    <link rel="stylesheet" href="css/styles.css">
+  </head>
+  <body>
+    <main class="login-view" id="login-view">
+      <section class="login-card">
+        <h1>Acesso administrativo</h1>
+        <p class="login-copy">Entre com seu e-mail e senha para acessar o painel administrativo.</p>
+        <form class="login-form" id="login-form">
+          <label>
+            <span>E-mail</span>
+            <input type="email" name="email" value="julianoaza@hotmail.com" autocomplete="email" required>
+          </label>
+          <label>
+            <span>Senha</span>
+            <input type="password" name="password" autocomplete="current-password" required>
+          </label>
+          <button type="submit">Entrar no painel</button>
+        </form>
+        <p class="login-message" id="login-message" role="status" aria-live="polite"></p>
+        <small>O acesso é validado pelo Supabase Auth.</small>
+      </section>
+      <aside class="login-preview" aria-hidden="true">
+        <div class="gold-line"></div>
+        <strong>Obras</strong>
+        <strong>Imóveis</strong>
+        <span>Destaques, status e informações em um só lugar.</span>
+      </aside>
+    </main>
+
+    <main class="app-shell is-hidden" id="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="#dashboard" aria-label="Admin AZA">
+          <img src="assets/logos/aza-logo.png" alt="">
+          <span>Admin AZA</span>
+        </a>
+        <nav class="side-nav" aria-label="Módulos">
+          <button class="is-active" type="button" data-module="properties">Imóveis</button>
+          <button type="button" data-module="works">Obras</button>
+        </nav>
+        <div class="sidebar-note">
+          <strong>Supabase</strong>
+          <span>Auth, RLS e CRUD de imóveis e obras.</span>
+        </div>
+      </aside>
+
+      <section class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" id="module-eyebrow">AZA Imóveis</p>
+            <h1 id="module-title">Gerenciar imóveis</h1>
+          </div>
+          <div class="topbar-actions">
+            <button class="ghost-button" type="button" id="refresh-button">Atualizar lista</button>
+            <button type="button" id="new-button">Novo</button>
+            <button class="ghost-button" type="button" id="logout-button">Sair</button>
+          </div>
+        </header>
+
+        <section class="summary-grid" aria-label="Resumo">
+          <article>
+            <span>Total</span>
+            <strong id="summary-total">0</strong>
+          </article>
+          <article>
+            <span>Destaques</span>
+            <strong id="summary-featured">0</strong>
+          </article>
+          <article>
+            <span>Publicados</span>
+            <strong id="summary-published">0</strong>
+          </article>
+        </section>
+
+        <section class="content-grid">
+          <div class="list-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Conteúdo</p>
+                <h2 id="list-title">Imóveis cadastrados</h2>
+              </div>
+            </div>
+            <div class="toolbar">
+              <input id="search-input" type="search" placeholder="Buscar por título, cidade ou código">
+              <select id="status-filter">
+                <option value="">Todos os status</option>
+                <option value="published">Publicado</option>
+                <option value="draft">Rascunho</option>
+                <option value="inactive">Inativo</option>
+              </select>
+            </div>
+            <div class="item-list" id="item-list"></div>
+          </div>
+        </section>
+      </section>
+
+      <div class="editor-modal is-hidden" id="editor-modal" aria-hidden="true">
+        <section class="editor-dialog" role="dialog" aria-modal="true" aria-labelledby="editor-title">
+          <div class="editor-dialog-head">
+            <div>
+              <p class="eyebrow" id="editor-eyebrow">Edição</p>
+              <h2 id="editor-title">Imóvel</h2>
+            </div>
+            <button class="icon-button" type="button" id="close-editor" aria-label="Fechar edição">×</button>
+          </div>
+
+          <div class="editor-layout">
+            <form class="editor-form" id="editor-form"></form>
+
+            <aside class="preview-panel">
+              <p class="eyebrow">Preview</p>
+              <div id="preview-card"></div>
+            </aside>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/main.js"></script>
+  </body>
+</html>
