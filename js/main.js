@@ -14,8 +14,10 @@ const moduleConfig = {
     title: "Gerenciar imóveis",
     listTitle: "Imóveis cadastrados",
     singular: "imóvel",
-    empty: "Nenhum imóvel encontrado no Supabase.",
+    empty: "Nenhum imóvel cadastrado ainda.",
     searchPlaceholder: "Buscar por título, cidade ou código",
+    summaryMiddleLabel: "Destaques",
+    supportsFeatured: true,
     fields: [
       ["code", "Código", "text", "AZA-001", true],
       ["title", "Título", "text", "Casa à venda no Centro", true, "wide"],
@@ -43,13 +45,14 @@ const moduleConfig = {
     title: "Gerenciar obras",
     listTitle: "Obras cadastradas",
     singular: "obra",
-    empty: "Nenhuma obra encontrada no Supabase.",
+    empty: "Nenhuma obra cadastrada ainda.",
     searchPlaceholder: "Buscar por título, cidade, código ou categoria",
+    summaryMiddleLabel: "Rascunhos",
+    supportsFeatured: false,
     fields: [
       ["code", "Código", "text", "OBRA-001", true],
       ["title", "Título", "text", "Residência em execução", true, "wide"],
       ["status", "Status", "select", ["draft", "published", "inactive"], true],
-      ["featured", "Destaque", "checkbox"],
       ["category", "Categoria", "select", ["Residencial", "Comercial", "Reforma", "Regularização"], true],
       ["city", "Cidade", "text", "Piumhi", true],
       ["stage", "Etapa", "select", ["Projeto", "Execução", "Acabamento", "Concluída"]],
@@ -80,6 +83,7 @@ const editorTitle = document.querySelector("#editor-title");
 const editorForm = document.querySelector("#editor-form");
 const previewCard = document.querySelector("#preview-card");
 const summaryTotal = document.querySelector("#summary-total");
+const summaryMiddleLabel = document.querySelector("#summary-middle-label");
 const summaryFeatured = document.querySelector("#summary-featured");
 const summaryPublished = document.querySelector("#summary-published");
 
@@ -91,6 +95,8 @@ let currentSession = null;
 let loadedModules = new Set();
 let isSaving = false;
 let isUploading = false;
+let pendingImageFiles = [];
+let pendingImagePreviews = [];
 
 const money = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -161,6 +167,16 @@ function coverImage() {
   return activeImages.find((image) => image.is_cover) || activeImages[0] || null;
 }
 
+function clearPendingImages() {
+  pendingImagePreviews.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+  pendingImageFiles = [];
+  pendingImagePreviews = [];
+}
+
+function hasPendingImages() {
+  return pendingImagePreviews.length > 0;
+}
+
 function setLoginMessage(message, tone = "neutral") {
   loginMessage.textContent = message;
   loginMessage.dataset.tone = tone;
@@ -171,6 +187,7 @@ function showLogin(message = "") {
   loadedModules = new Set();
   records = { properties: [], works: [] };
   activeImages = [];
+  clearPendingImages();
   activeId = null;
   closeEditor();
   renderSummary();
@@ -209,8 +226,11 @@ function matchesFilters(record) {
 
 function renderSummary() {
   const items = currentRecords();
+  summaryMiddleLabel.textContent = config().summaryMiddleLabel;
   summaryTotal.textContent = items.length;
-  summaryFeatured.textContent = items.filter((item) => item.featured).length;
+  summaryFeatured.textContent = config().supportsFeatured
+    ? items.filter((item) => item.featured).length
+    : items.filter((item) => item.status === "draft").length;
   summaryPublished.textContent = items.filter((item) => item.status === "published").length;
 }
 
@@ -262,7 +282,7 @@ function renderList() {
       ${renderRecordDetails(record)}
       <span class="property-readonly-description">${escapeHtml(record.description || "Sem descrição cadastrada.")}</span>
       <span class="pills">
-        ${record.featured ? '<span class="pill red">Destaque</span>' : ""}
+        ${config().supportsFeatured && record.featured ? '<span class="pill red">Destaque</span>' : ""}
         <span class="pill ${record.status === "published" ? "" : "muted"}">${statusLabel(record.status)}</span>
       </span>
     </button>
@@ -285,7 +305,7 @@ async function loadRecords() {
   renderLoading();
 
   if (!supabaseClient) {
-    renderError("cliente Supabase não carregou.");
+    renderError("serviço de dados indisponível.");
     return;
   }
 
@@ -317,6 +337,7 @@ function setModule(moduleName, options = {}) {
   activeModule = moduleName;
   activeId = records[activeModule][0]?.id || null;
   activeImages = [];
+  clearPendingImages();
   moduleButtons.forEach((button) => button.classList.toggle("is-active", button.dataset.module === moduleName));
 
   moduleEyebrow.textContent = config().eyebrow;
@@ -421,6 +442,8 @@ function renderPreview(record) {
   const image = coverImage();
   const media = image
     ? `<img src="${imageUrl(image.image_url)}" alt="${escapeHtml(image.alt_text || record.title || "")}">`
+    : hasPendingImages()
+      ? `<img src="${pendingImagePreviews[0].previewUrl}" alt="${escapeHtml(pendingImagePreviews[0].alt_text || record.title || "")}">`
     : `<span>${activeModule === "properties" ? "Imagem do imóvel" : "Imagem da obra"}</span>`;
 
   if (activeModule === "properties") {
@@ -429,7 +452,7 @@ function renderPreview(record) {
         <div class="media">${media}</div>
         <div class="body">
           <span class="pill ${record.status === "published" ? "" : "muted"}">${statusLabel(record.status)}</span>
-          ${record.featured ? '<span class="pill red">Destaque</span>' : ""}
+          ${config().supportsFeatured && record.featured ? '<span class="pill red">Destaque</span>' : ""}
           <h3>${escapeHtml(record.title || "Título do imóvel")}</h3>
           <p>${escapeHtml(record.neighborhood || "Bairro")} · ${escapeHtml(record.city || "Cidade")}</p>
           <div class="price">${money.format(record.price || 0)}</div>
@@ -445,7 +468,6 @@ function renderPreview(record) {
       <div class="media">${media}</div>
       <div class="body">
         <span class="pill ${record.status === "published" ? "" : "muted"}">${statusLabel(record.status)}</span>
-        ${record.featured ? '<span class="pill red">Destaque</span>' : ""}
         <h3>${escapeHtml(record.title || "Título da obra")}</h3>
         <p>${escapeHtml(record.category || "Categoria")} · ${escapeHtml(record.stage || "Etapa")}</p>
         <p>${escapeHtml(record.description || "Descrição resumida para aparecer no site público.")}</p>
@@ -455,32 +477,20 @@ function renderPreview(record) {
 }
 
 function imageSectionHtml(isNew) {
-  if (isNew) {
-    return `
-      <section class="image-manager wide">
-        <div class="image-manager-head">
-          <div>
-            <span>Imagens</span>
-            <strong>Salve o cadastro antes de enviar imagens.</strong>
-          </div>
-        </div>
-      </section>
-    `;
-  }
-
   return `
     <section class="image-manager wide">
       <div class="image-manager-head">
         <div>
           <span>Imagens</span>
-          <strong>${activeImages.length} imagem(ns) cadastrada(s)</strong>
+          <strong>${isNew ? `${pendingImagePreviews.length} imagem(ns) selecionada(s)` : `${activeImages.length} imagem(ns) cadastrada(s)`}</strong>
+          <small>${isNew ? "As imagens serão enviadas junto com o primeiro salvamento." : "A primeira imagem marcada como capa aparece primeiro no site."}</small>
         </div>
         <label class="upload-button">
-          Enviar imagens
+          ${isNew ? "Selecionar imagens" : "Enviar imagens"}
           <input id="image-input" type="file" accept="image/*" multiple>
         </label>
       </div>
-      <div class="drop-zone" id="drop-zone">Arraste imagens aqui ou use o botão de envio.</div>
+      <div class="drop-zone" id="drop-zone">Arraste imagens aqui ou use o botão acima.</div>
       <div class="image-list" id="image-list"></div>
     </section>
   `;
@@ -490,8 +500,26 @@ function renderImageList() {
   const list = editorForm.querySelector("#image-list");
   if (!list) return;
 
+  if (!activeId && pendingImagePreviews.length) {
+    list.innerHTML = pendingImagePreviews.map((image, index) => `
+      <article class="image-item" data-pending-index="${index}">
+        <img src="${image.previewUrl}" alt="${escapeHtml(image.alt_text || "")}">
+        <div class="image-item-body">
+          <span class="pill ${index === 0 ? "" : "muted"}">${index === 0 ? "Capa inicial" : "Galeria"}</span>
+          <input class="image-alt-input" value="${escapeHtml(image.alt_text || "")}" placeholder="Texto alternativo">
+          <div class="image-actions">
+            <button type="button" data-action="pending-up" ${index === 0 ? "disabled" : ""}>Subir</button>
+            <button type="button" data-action="pending-down" ${index === pendingImagePreviews.length - 1 ? "disabled" : ""}>Descer</button>
+            <button type="button" data-action="pending-delete">Remover</button>
+          </div>
+        </div>
+      </article>
+    `).join("");
+    return;
+  }
+
   if (!activeImages.length) {
-    list.innerHTML = '<div class="empty-state compact">Nenhuma imagem cadastrada ainda.</div>';
+    list.innerHTML = '<div class="empty-state compact">Nenhuma imagem selecionada ainda.</div>';
     return;
   }
 
@@ -534,6 +562,11 @@ function attachImageHandlers() {
   list?.addEventListener("click", (event) => {
     const button = event.target.closest("button[data-action]");
     if (!button) return;
+    const pendingItem = button.closest("[data-pending-index]");
+    if (pendingItem) {
+      handlePendingImageAction(button.dataset.action, Number(pendingItem.dataset.pendingIndex));
+      return;
+    }
     const item = button.closest("[data-image-id]");
     if (!item) return;
     handleImageAction(button.dataset.action, item.dataset.imageId);
@@ -541,10 +574,43 @@ function attachImageHandlers() {
 
   list?.addEventListener("change", (event) => {
     if (!event.target.classList.contains("image-alt-input")) return;
+    const pendingItem = event.target.closest("[data-pending-index]");
+    if (pendingItem) {
+      updatePendingImageAlt(Number(pendingItem.dataset.pendingIndex), event.target.value);
+      return;
+    }
     const item = event.target.closest("[data-image-id]");
     if (!item) return;
     updateImageAlt(item.dataset.imageId, event.target.value);
   });
+}
+
+function updatePendingImageAlt(index, altText) {
+  if (!pendingImagePreviews[index]) return;
+  pendingImagePreviews[index].alt_text = altText.trim();
+  renderPreview(formDataToRecord());
+}
+
+function movePendingImage(index, direction) {
+  const targetIndex = direction === "up" ? index - 1 : index + 1;
+  if (index < 0 || targetIndex < 0 || targetIndex >= pendingImagePreviews.length) return;
+
+  [pendingImagePreviews[index], pendingImagePreviews[targetIndex]] = [pendingImagePreviews[targetIndex], pendingImagePreviews[index]];
+  [pendingImageFiles[index], pendingImageFiles[targetIndex]] = [pendingImageFiles[targetIndex], pendingImageFiles[index]];
+  renderForm(formDataToRecord(), true);
+}
+
+function removePendingImage(index) {
+  const [image] = pendingImagePreviews.splice(index, 1);
+  pendingImageFiles.splice(index, 1);
+  if (image) URL.revokeObjectURL(image.previewUrl);
+  renderForm(formDataToRecord(), true);
+}
+
+function handlePendingImageAction(action, index) {
+  if (action === "pending-up") movePendingImage(index, "up");
+  if (action === "pending-down") movePendingImage(index, "down");
+  if (action === "pending-delete") removePendingImage(index);
 }
 
 function renderForm(record, isNew) {
@@ -608,6 +674,7 @@ async function openEditor(id = null) {
   activeId = id;
   const record = id ? currentRecord() : emptyRecord();
   activeImages = [];
+  clearPendingImages();
   renderList();
 
   if (id) await loadImages(id);
@@ -622,6 +689,7 @@ function closeEditor() {
   editorModal.classList.add("is-hidden");
   editorModal.setAttribute("aria-hidden", "true");
   document.body.classList.remove("editor-open");
+  clearPendingImages();
 }
 
 function filePath(file) {
@@ -637,47 +705,83 @@ function filePath(file) {
 
 async function uploadFiles(fileList) {
   const files = [...fileList].filter((file) => file.type.startsWith("image/"));
-  if (!files.length || !activeId || isUploading) return;
+  if (!files.length || isUploading) return;
+
+  if (!activeId) {
+    pendingImageFiles.push(...files);
+    pendingImagePreviews.push(...files.map((file) => ({
+      file,
+      previewUrl: URL.createObjectURL(file),
+      alt_text: file.name,
+    })));
+    renderForm(formDataToRecord(), true);
+    return;
+  }
 
   isUploading = true;
   const uploadButton = editorForm.querySelector(".upload-button");
   if (uploadButton) uploadButton.classList.add("is-loading");
 
   for (const file of files) {
-    const path = filePath(file);
-    const { error: uploadError } = await supabaseClient.storage
-      .from(MEDIA_BUCKET)
-      .upload(path, file, { contentType: file.type, upsert: false });
-
-    if (uploadError) {
-      alert(`Não foi possível enviar ${file.name}: ${uploadError.message}`);
-      continue;
-    }
-
-    const { data, error: insertError } = await supabaseClient
-      .from(config().imageTable)
-      .insert({
-        [config().imageFk]: activeId,
-        image_url: path,
-        alt_text: file.name,
-        is_cover: activeImages.length === 0,
-        sort_order: activeImages.length,
-      })
-      .select()
-      .single();
-
-    if (insertError) {
-      await supabaseClient.storage.from(MEDIA_BUCKET).remove([path]);
-      alert(`Não foi possível salvar metadados de ${file.name}: ${insertError.message}`);
-      continue;
-    }
-
-    activeImages.push(data);
+    await uploadSingleImage(file, file.name, activeImages.length, activeImages.length === 0);
   }
 
   isUploading = false;
   if (uploadButton) uploadButton.classList.remove("is-loading");
   renderForm(currentRecord(), false);
+}
+
+async function uploadSingleImage(file, altText, sortOrder, isCover) {
+  const path = filePath(file);
+  const { error: uploadError } = await supabaseClient.storage
+    .from(MEDIA_BUCKET)
+    .upload(path, file, { contentType: file.type, upsert: false });
+
+  if (uploadError) {
+    alert(`Não foi possível enviar ${file.name}: ${uploadError.message}`);
+    return null;
+  }
+
+  const { data, error: insertError } = await supabaseClient
+    .from(config().imageTable)
+    .insert({
+      [config().imageFk]: activeId,
+      image_url: path,
+      alt_text: altText || file.name,
+      is_cover: isCover,
+      sort_order: sortOrder,
+    })
+    .select()
+    .single();
+
+  if (insertError) {
+    await supabaseClient.storage.from(MEDIA_BUCKET).remove([path]);
+    alert(`Não foi possível salvar a imagem ${file.name}: ${insertError.message}`);
+    return null;
+  }
+
+  activeImages.push(data);
+  return data;
+}
+
+async function uploadPendingImages() {
+  if (!pendingImageFiles.length || !activeId) return;
+
+  isUploading = true;
+  const submitButton = editorForm.querySelector('button[type="submit"]');
+  if (submitButton) submitButton.textContent = "Enviando imagens...";
+
+  for (let index = 0; index < pendingImageFiles.length; index += 1) {
+    await uploadSingleImage(
+      pendingImageFiles[index],
+      pendingImagePreviews[index]?.alt_text || pendingImageFiles[index].name,
+      activeImages.length,
+      activeImages.length === 0 && index === 0
+    );
+  }
+
+  isUploading = false;
+  clearPendingImages();
 }
 
 async function updateImageAlt(imageId, altText) {
@@ -778,6 +882,7 @@ async function saveCurrent(event) {
   const isNew = editorForm.dataset.mode === "new";
   const id = editorForm.dataset.id;
   const payload = formDataToRecord();
+  if (!config().supportsFeatured) payload.featured = false;
 
   isSaving = true;
   submitButton.disabled = true;
@@ -789,11 +894,10 @@ async function saveCurrent(event) {
 
   const { data, error } = await request;
 
-  isSaving = false;
-  submitButton.disabled = false;
-  submitButton.textContent = "Salvar";
-
   if (error) {
+    isSaving = false;
+    submitButton.disabled = false;
+    submitButton.textContent = "Salvar";
     alert(`Não foi possível salvar: ${error.message}`);
     return;
   }
@@ -810,12 +914,20 @@ async function saveCurrent(event) {
 
   activeId = saved.id;
   if (isNew) {
+    await uploadPendingImages();
     await loadImages(saved.id);
     renderForm(saved, false);
   } else {
     closeEditor();
   }
   renderList();
+
+  isSaving = false;
+  const currentSubmitButton = editorForm.querySelector('button[type="submit"]');
+  if (currentSubmitButton) {
+    currentSubmitButton.disabled = false;
+    currentSubmitButton.textContent = "Salvar";
+  }
 }
 
 async function deleteCurrent() {
@@ -848,7 +960,7 @@ async function handleLogin(event) {
   event.preventDefault();
 
   if (!supabaseClient) {
-    setLoginMessage("Cliente Supabase não carregou.", "error");
+    setLoginMessage("Serviço de dados indisponível. Tente novamente em alguns instantes.", "error");
     return;
   }
 
@@ -881,7 +993,7 @@ async function handleLogout() {
 
 async function initAuth() {
   if (!supabaseClient) {
-    showLogin("Cliente Supabase não carregou.");
+    showLogin("Serviço de dados indisponível. Tente novamente em alguns instantes.");
     return;
   }
 
