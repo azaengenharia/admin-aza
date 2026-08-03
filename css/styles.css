@@ -595,6 +595,21 @@ textarea {
   min-height: 18px;
 }
 
+.editor-form .check small {
+  color: #7b838f;
+  font-size: .76rem;
+  font-weight: 750;
+}
+
+.editor-form .check.is-disabled {
+  cursor: help;
+  color: #767d87;
+}
+
+.editor-form .check.is-disabled input {
+  cursor: not-allowed;
+}
+
 .form-actions {
   justify-content: flex-end;
   gap: 10px;

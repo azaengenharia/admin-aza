@@ -18,6 +18,9 @@ const moduleConfig = {
     searchPlaceholder: "Buscar por título, cidade ou código",
     summaryMiddleLabel: "Destaques",
     supportsFeatured: true,
+    featuredLabel: "Destaque",
+    featuredPill: "Destaque",
+    singleFeatured: false,
     fields: [
       ["code", "Código", "text", "AZA-001", true],
       ["title", "Título", "text", "Casa à venda no Centro", true, "wide"],
@@ -47,12 +50,16 @@ const moduleConfig = {
     singular: "obra",
     empty: "Nenhuma obra cadastrada ainda.",
     searchPlaceholder: "Buscar por título, cidade, código ou categoria",
-    summaryMiddleLabel: "Rascunhos",
-    supportsFeatured: false,
+    summaryMiddleLabel: "Em foco",
+    supportsFeatured: true,
+    featuredLabel: "Obra em foco",
+    featuredPill: "Obra em foco",
+    singleFeatured: true,
     fields: [
       ["code", "Código", "text", "OBRA-001", true],
       ["title", "Título", "text", "Residência em execução", true, "wide"],
       ["status", "Status", "select", ["draft", "published", "inactive"], true],
+      ["featured", "Obra em foco", "checkbox"],
       ["category", "Categoria", "select", ["Residencial", "Comercial", "Reforma", "Regularização"], true],
       ["city", "Cidade", "text", "Piumhi", true],
       ["stage", "Etapa", "select", ["Projeto", "Execução", "Acabamento", "Concluída"]],
@@ -114,6 +121,10 @@ function currentRecords() {
 
 function currentRecord() {
   return currentRecords().find((record) => record.id === activeId) || null;
+}
+
+function currentFeaturedRecord() {
+  return currentRecords().find((record) => record.featured) || null;
 }
 
 function escapeHtml(value) {
@@ -228,9 +239,7 @@ function renderSummary() {
   const items = currentRecords();
   summaryMiddleLabel.textContent = config().summaryMiddleLabel;
   summaryTotal.textContent = items.length;
-  summaryFeatured.textContent = config().supportsFeatured
-    ? items.filter((item) => item.featured).length
-    : items.filter((item) => item.status === "draft").length;
+  summaryFeatured.textContent = items.filter((item) => item.featured).length;
   summaryPublished.textContent = items.filter((item) => item.status === "published").length;
 }
 
@@ -282,7 +291,7 @@ function renderList() {
       ${renderRecordDetails(record)}
       <span class="property-readonly-description">${escapeHtml(record.description || "Sem descrição cadastrada.")}</span>
       <span class="pills">
-        ${config().supportsFeatured && record.featured ? '<span class="pill red">Destaque</span>' : ""}
+        ${config().supportsFeatured && record.featured ? `<span class="pill red">${escapeHtml(config().featuredPill)}</span>` : ""}
         <span class="pill ${record.status === "published" ? "" : "muted"}">${statusLabel(record.status)}</span>
       </span>
     </button>
@@ -405,10 +414,17 @@ function fieldHtml(field, record) {
   }
 
   if (type === "checkbox") {
+    const selectedFocus = config().singleFeatured && name === "featured" ? currentFeaturedRecord() : null;
+    const disabledByFocus = Boolean(selectedFocus && selectedFocus.id !== record.id && !value);
+    const title = disabledByFocus
+      ? `${selectedFocus.title} já está em foco. Para trocar, abra essa obra e desmarque primeiro.`
+      : "";
+
     return `
-      <label class="check${wide}">
-        <input name="${name}" type="checkbox"${value ? " checked" : ""}>
+      <label class="check${wide}${disabledByFocus ? " is-disabled" : ""}" title="${escapeHtml(title)}">
+        <input name="${name}" type="checkbox"${value ? " checked" : ""}${disabledByFocus ? " disabled" : ""}>
         <span>${label}</span>
+        ${disabledByFocus ? `<small>${escapeHtml(selectedFocus.title)} já está em foco.</small>` : ""}
       </label>
     `;
   }
@@ -452,7 +468,7 @@ function renderPreview(record) {
         <div class="media">${media}</div>
         <div class="body">
           <span class="pill ${record.status === "published" ? "" : "muted"}">${statusLabel(record.status)}</span>
-          ${config().supportsFeatured && record.featured ? '<span class="pill red">Destaque</span>' : ""}
+          ${config().supportsFeatured && record.featured ? `<span class="pill red">${escapeHtml(config().featuredPill)}</span>` : ""}
           <h3>${escapeHtml(record.title || "Título do imóvel")}</h3>
           <p>${escapeHtml(record.neighborhood || "Bairro")} · ${escapeHtml(record.city || "Cidade")}</p>
           <div class="price">${money.format(record.price || 0)}</div>
@@ -882,7 +898,6 @@ async function saveCurrent(event) {
   const isNew = editorForm.dataset.mode === "new";
   const id = editorForm.dataset.id;
   const payload = formDataToRecord();
-  if (!config().supportsFeatured) payload.featured = false;
 
   isSaving = true;
   submitButton.disabled = true;
@@ -913,6 +928,25 @@ async function saveCurrent(event) {
   }
 
   activeId = saved.id;
+  if (config().singleFeatured && saved.featured) {
+    const { error: focusError } = await supabaseClient
+      .from(config().table)
+      .update({ featured: false })
+      .neq("id", saved.id);
+
+    if (focusError) {
+      isSaving = false;
+      submitButton.disabled = false;
+      submitButton.textContent = "Salvar";
+      alert(`Cadastro salvo, mas não foi possível atualizar a obra em foco: ${focusError.message}`);
+      return;
+    }
+
+    records[activeModule] = records[activeModule].map((item) => (
+      item.id === saved.id ? { ...item, featured: true } : { ...item, featured: false }
+    ));
+  }
+
   if (isNew) {
     await uploadPendingImages();
     await loadImages(saved.id);
