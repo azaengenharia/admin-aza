@@ -27,8 +27,6 @@ Recursos:
 - Supabase Storage para fotos e vídeos.
 - Sites públicos consumindo apenas registros publicados.
 
-## Ativação dos vídeos
+## Vídeos no Supabase
 
-Execute uma vez o arquivo `supabase/video-media.sql` no SQL Editor do projeto Supabase antes de publicar os três sites. Ele adiciona o tipo de mídia às galerias atuais sem alterar as imagens já cadastradas.
-
-O limite de tamanho configurado em **Storage Settings** e no bucket `aza-media` também precisa comportar os vídeos enviados.
+Não é necessária uma tabela ou migração adicional: fotos e vídeos usam as galerias e políticas já existentes, e o tipo é identificado pelo arquivo. O limite de tamanho configurado em **Storage Settings** e no bucket `aza-media` precisa comportar os vídeos enviados.

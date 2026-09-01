@@ -861,7 +861,6 @@ async function uploadSingleImage(file, altText, sortOrder, isCover, onProgress) 
       [config().imageFk]: activeId,
       image_url: path,
       alt_text: altText || file.name,
-      media_type: type,
       is_cover: type === "image" && isCover,
       sort_order: sortOrder,
     })
