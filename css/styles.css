@@ -642,10 +642,15 @@ textarea {
   font-weight: 950;
 }
 
-.preview-card .media img {
+.preview-card .media img,
+.preview-card .media video {
   width: 100%;
   height: 180px;
   object-fit: cover;
+}
+
+.preview-card .media video {
+  background: #111;
 }
 
 .editor-modal {
@@ -815,11 +820,16 @@ textarea {
   background: rgba(255, 255, 255, .74);
 }
 
-.image-item img {
+.image-item img,
+.image-item video {
   width: 116px;
   height: 88px;
   border-radius: 7px;
   object-fit: cover;
+}
+
+.image-item video {
+  background: #111;
 }
 
 .image-item-body {
@@ -984,7 +994,8 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .image-item img {
+  .image-item img,
+  .image-item video {
     width: 100%;
     height: 170px;
   }

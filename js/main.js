@@ -1,6 +1,7 @@
 const SUPABASE_URL = "https://ulwhmtpduzxjbkqrqesd.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_LLQAnzzF3WFr1Ln5iWPIlw_dtWb3QPH";
 const MEDIA_BUCKET = "aza-media";
+const RESUMABLE_UPLOAD_URL = "https://ulwhmtpduzxjbkqrqesd.storage.supabase.co/storage/v1/upload/resumable";
 
 const supabaseClient = window.supabase?.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -174,8 +175,36 @@ function imageUrl(path) {
   return data.publicUrl;
 }
 
+function mediaType(media) {
+  if (media?.media_type) return media.media_type;
+  if (media?.file?.type?.startsWith("video/") || media?.type?.startsWith("video/")) return "video";
+  return /\.(mp4|webm|mov|m4v)(?:$|\?)/i.test(media?.image_url || media?.file?.name || media?.name || "") ? "video" : "image";
+}
+
+function isVideo(media) {
+  return mediaType(media) === "video";
+}
+
+function contentTypeForFile(file) {
+  if (file.type) return file.type;
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  return {
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    gif: "image/gif",
+    webp: "image/webp",
+    avif: "image/avif",
+    mp4: "video/mp4",
+    webm: "video/webm",
+    mov: "video/quicktime",
+    m4v: "video/x-m4v",
+  }[extension] || "application/octet-stream";
+}
+
 function coverImage() {
-  return activeImages.find((image) => image.is_cover) || activeImages[0] || null;
+  const images = activeImages.filter((media) => !isVideo(media));
+  return images.find((image) => image.is_cover) || images[0] || null;
 }
 
 function clearPendingImages() {
@@ -455,11 +484,15 @@ function formDataToRecord() {
 }
 
 function renderPreview(record) {
-  const image = coverImage();
-  const media = image
-    ? `<img src="${imageUrl(image.image_url)}" alt="${escapeHtml(image.alt_text || record.title || "")}">`
+  const selectedMedia = coverImage() || activeImages[0];
+  const media = selectedMedia
+    ? isVideo(selectedMedia)
+      ? `<video src="${imageUrl(selectedMedia.image_url)}" controls muted playsinline preload="metadata" aria-label="${escapeHtml(selectedMedia.alt_text || record.title || "Vídeo")}"></video>`
+      : `<img src="${imageUrl(selectedMedia.image_url)}" alt="${escapeHtml(selectedMedia.alt_text || record.title || "")}">`
     : hasPendingImages()
-      ? `<img src="${pendingImagePreviews[0].previewUrl}" alt="${escapeHtml(pendingImagePreviews[0].alt_text || record.title || "")}">`
+      ? isVideo(pendingImagePreviews[0])
+        ? `<video src="${pendingImagePreviews[0].previewUrl}" controls muted playsinline preload="metadata" aria-label="${escapeHtml(pendingImagePreviews[0].alt_text || record.title || "Vídeo")}"></video>`
+        : `<img src="${pendingImagePreviews[0].previewUrl}" alt="${escapeHtml(pendingImagePreviews[0].alt_text || record.title || "")}">`
     : `<span>${activeModule === "properties" ? "Imagem do imóvel" : "Imagem da obra"}</span>`;
 
   if (activeModule === "properties") {
@@ -493,20 +526,21 @@ function renderPreview(record) {
 }
 
 function imageSectionHtml(isNew) {
+  const mediaCount = isNew ? pendingImagePreviews.length : activeImages.length;
   return `
     <section class="image-manager wide">
       <div class="image-manager-head">
         <div>
-          <span>Imagens</span>
-          <strong>${isNew ? `${pendingImagePreviews.length} imagem(ns) selecionada(s)` : `${activeImages.length} imagem(ns) cadastrada(s)`}</strong>
-          <small>${isNew ? "As imagens serão enviadas junto com o primeiro salvamento." : "A primeira imagem marcada como capa aparece primeiro no site."}</small>
+          <span>Fotos e vídeos</span>
+          <strong>${mediaCount} arquivo(s) ${isNew ? "selecionado(s)" : "cadastrado(s)"}</strong>
+          <small>${isNew ? "Os arquivos serão enviados junto com o primeiro salvamento." : "Fotos podem ser capa; vídeos aparecem na galeria. Prefira vídeos MP4."}</small>
         </div>
         <label class="upload-button">
-          ${isNew ? "Selecionar imagens" : "Enviar imagens"}
-          <input id="image-input" type="file" accept="image/*" multiple>
+          <span data-upload-label>${isNew ? "Selecionar mídias" : "Enviar mídias"}</span>
+          <input id="image-input" type="file" accept="image/*,video/*" multiple>
         </label>
       </div>
-      <div class="drop-zone" id="drop-zone">Arraste imagens aqui ou use o botão acima.</div>
+      <div class="drop-zone" id="drop-zone">Arraste fotos ou vídeos aqui ou use o botão acima.</div>
       <div class="image-list" id="image-list"></div>
     </section>
   `;
@@ -517,12 +551,15 @@ function renderImageList() {
   if (!list) return;
 
   if (!activeId && pendingImagePreviews.length) {
+    const firstPendingImageIndex = pendingImagePreviews.findIndex((media) => !isVideo(media));
     list.innerHTML = pendingImagePreviews.map((image, index) => `
       <article class="image-item" data-pending-index="${index}">
-        <img src="${image.previewUrl}" alt="${escapeHtml(image.alt_text || "")}">
+        ${isVideo(image)
+          ? `<video src="${image.previewUrl}" muted playsinline preload="metadata" aria-label="${escapeHtml(image.alt_text || "Vídeo")}"></video>`
+          : `<img src="${image.previewUrl}" alt="${escapeHtml(image.alt_text || "")}">`}
         <div class="image-item-body">
-          <span class="pill ${index === 0 ? "" : "muted"}">${index === 0 ? "Capa inicial" : "Galeria"}</span>
-          <input class="image-alt-input" value="${escapeHtml(image.alt_text || "")}" placeholder="Texto alternativo">
+          <span class="pill ${isVideo(image) || index !== firstPendingImageIndex ? "muted" : ""}">${isVideo(image) ? "Vídeo" : index === firstPendingImageIndex ? "Capa inicial" : "Foto"}</span>
+          <input class="image-alt-input" value="${escapeHtml(image.alt_text || "")}" placeholder="Descrição da mídia">
           <div class="image-actions">
             <button type="button" data-action="pending-up" ${index === 0 ? "disabled" : ""}>Subir</button>
             <button type="button" data-action="pending-down" ${index === pendingImagePreviews.length - 1 ? "disabled" : ""}>Descer</button>
@@ -535,18 +572,20 @@ function renderImageList() {
   }
 
   if (!activeImages.length) {
-    list.innerHTML = '<div class="empty-state compact">Nenhuma imagem selecionada ainda.</div>';
+    list.innerHTML = '<div class="empty-state compact">Nenhuma foto ou vídeo cadastrado ainda.</div>';
     return;
   }
 
   list.innerHTML = activeImages.map((image, index) => `
     <article class="image-item" data-image-id="${image.id}">
-      <img src="${imageUrl(image.image_url)}" alt="${escapeHtml(image.alt_text || "")}">
+      ${isVideo(image)
+        ? `<video src="${imageUrl(image.image_url)}" muted playsinline preload="metadata" aria-label="${escapeHtml(image.alt_text || "Vídeo")}"></video>`
+        : `<img src="${imageUrl(image.image_url)}" alt="${escapeHtml(image.alt_text || "")}">`}
       <div class="image-item-body">
-        <span class="pill ${image.is_cover ? "" : "muted"}">${image.is_cover ? "Capa" : "Galeria"}</span>
-        <input class="image-alt-input" value="${escapeHtml(image.alt_text || "")}" placeholder="Texto alternativo">
+        <span class="pill ${image.is_cover ? "" : "muted"}">${isVideo(image) ? "Vídeo" : image.is_cover ? "Capa" : "Foto"}</span>
+        <input class="image-alt-input" value="${escapeHtml(image.alt_text || "")}" placeholder="Descrição da mídia">
         <div class="image-actions">
-          <button type="button" data-action="cover" ${image.is_cover ? "disabled" : ""}>Capa</button>
+          ${isVideo(image) ? "" : `<button type="button" data-action="cover" ${image.is_cover ? "disabled" : ""}>Capa</button>`}
           <button type="button" data-action="up" ${index === 0 ? "disabled" : ""}>Subir</button>
           <button type="button" data-action="down" ${index === activeImages.length - 1 ? "disabled" : ""}>Descer</button>
           <button type="button" data-action="delete">Excluir</button>
@@ -679,7 +718,7 @@ async function loadImages(recordId) {
 
   if (error) {
     activeImages = [];
-    alert(`Não foi possível carregar imagens: ${error.message}`);
+    alert(`Não foi possível carregar fotos e vídeos: ${error.message}`);
     return;
   }
 
@@ -720,7 +759,15 @@ function filePath(file) {
 }
 
 async function uploadFiles(fileList) {
-  const files = [...fileList].filter((file) => file.type.startsWith("image/"));
+  const selectedFiles = [...fileList];
+  const files = selectedFiles.filter((file) => (
+    file.type.startsWith("image/")
+    || file.type.startsWith("video/")
+    || /\.(jpe?g|png|gif|webp|avif|mp4|webm|mov|m4v)$/i.test(file.name)
+  ));
+  if (selectedFiles.length && !files.length) {
+    alert("Selecione arquivos de imagem ou vídeo.");
+  }
   if (!files.length || isUploading) return;
 
   if (!activeId) {
@@ -729,6 +776,7 @@ async function uploadFiles(fileList) {
       file,
       previewUrl: URL.createObjectURL(file),
       alt_text: file.name,
+      media_type: mediaType(file),
     })));
     renderForm(formDataToRecord(), true);
     return;
@@ -736,10 +784,19 @@ async function uploadFiles(fileList) {
 
   isUploading = true;
   const uploadButton = editorForm.querySelector(".upload-button");
+  const uploadLabel = uploadButton?.querySelector("[data-upload-label]");
   if (uploadButton) uploadButton.classList.add("is-loading");
 
   for (const file of files) {
-    await uploadSingleImage(file, file.name, activeImages.length, activeImages.length === 0);
+    await uploadSingleImage(
+      file,
+      file.name,
+      activeImages.length,
+      mediaType(file) === "image" && !coverImage(),
+      (percentage) => {
+        if (uploadLabel) uploadLabel.textContent = `Enviando ${percentage}%`;
+      }
+    );
   }
 
   isUploading = false;
@@ -747,14 +804,54 @@ async function uploadFiles(fileList) {
   renderForm(currentRecord(), false);
 }
 
-async function uploadSingleImage(file, altText, sortOrder, isCover) {
-  const path = filePath(file);
-  const { error: uploadError } = await supabaseClient.storage
-    .from(MEDIA_BUCKET)
-    .upload(path, file, { contentType: file.type, upsert: false });
+async function uploadFileToStorage(file, path, onProgress = () => {}) {
+  const useResumableUpload = file.size > 6 * 1024 * 1024 && window.tus?.Upload;
 
-  if (uploadError) {
-    alert(`Não foi possível enviar ${file.name}: ${uploadError.message}`);
+  if (!useResumableUpload) {
+    const { error } = await supabaseClient.storage
+      .from(MEDIA_BUCKET)
+      .upload(path, file, { contentType: contentTypeForFile(file), upsert: false });
+    if (error) throw error;
+    onProgress(100);
+    return;
+  }
+
+  const accessToken = currentSession?.access_token;
+  if (!accessToken) throw new Error("Sua sessão expirou. Entre novamente.");
+
+  await new Promise((resolve, reject) => {
+    const upload = new window.tus.Upload(file, {
+      endpoint: RESUMABLE_UPLOAD_URL,
+      retryDelays: [0, 3000, 5000, 10000, 20000],
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+      },
+      uploadDataDuringCreation: true,
+      chunkSize: 6 * 1024 * 1024,
+      metadata: {
+        bucketName: MEDIA_BUCKET,
+        objectName: path,
+        contentType: contentTypeForFile(file),
+        cacheControl: "3600",
+      },
+      onError: reject,
+      onProgress(bytesUploaded, bytesTotal) {
+        onProgress(Math.round((bytesUploaded / bytesTotal) * 100));
+      },
+      onSuccess: resolve,
+    });
+    upload.start();
+  });
+}
+
+async function uploadSingleImage(file, altText, sortOrder, isCover, onProgress) {
+  const path = filePath(file);
+  const type = mediaType(file);
+
+  try {
+    await uploadFileToStorage(file, path, onProgress);
+  } catch (uploadError) {
+    alert(`Não foi possível enviar ${file.name}: ${uploadError.message || uploadError}`);
     return null;
   }
 
@@ -764,7 +861,8 @@ async function uploadSingleImage(file, altText, sortOrder, isCover) {
       [config().imageFk]: activeId,
       image_url: path,
       alt_text: altText || file.name,
-      is_cover: isCover,
+      media_type: type,
+      is_cover: type === "image" && isCover,
       sort_order: sortOrder,
     })
     .select()
@@ -785,14 +883,18 @@ async function uploadPendingImages() {
 
   isUploading = true;
   const submitButton = editorForm.querySelector('button[type="submit"]');
-  if (submitButton) submitButton.textContent = "Enviando imagens...";
+  if (submitButton) submitButton.textContent = "Enviando mídias...";
 
   for (let index = 0; index < pendingImageFiles.length; index += 1) {
+    const file = pendingImageFiles[index];
     await uploadSingleImage(
-      pendingImageFiles[index],
-      pendingImagePreviews[index]?.alt_text || pendingImageFiles[index].name,
+      file,
+      pendingImagePreviews[index]?.alt_text || file.name,
       activeImages.length,
-      activeImages.length === 0 && index === 0
+      mediaType(file) === "image" && !coverImage(),
+      (percentage) => {
+        if (submitButton) submitButton.textContent = `Enviando ${index + 1}/${pendingImageFiles.length} · ${percentage}%`;
+      }
     );
   }
 
@@ -816,6 +918,9 @@ async function updateImageAlt(imageId, altText) {
 }
 
 async function setCoverImage(imageId) {
+  const selectedImage = activeImages.find((image) => image.id === imageId);
+  if (!selectedImage || isVideo(selectedImage)) return;
+
   const fk = config().imageFk;
   const table = config().imageTable;
 
@@ -837,7 +942,7 @@ async function setCoverImage(imageId) {
 
 async function deleteImage(imageId) {
   const image = activeImages.find((item) => item.id === imageId);
-  if (!image || !confirm("Excluir esta imagem?")) return;
+  if (!image || !confirm(`Excluir este ${isVideo(image) ? "vídeo" : "arquivo"}?`)) return;
 
   const { error: dbError } = await supabaseClient
     .from(config().imageTable)
@@ -845,15 +950,16 @@ async function deleteImage(imageId) {
     .eq("id", imageId);
 
   if (dbError) {
-    alert(`Não foi possível excluir imagem: ${dbError.message}`);
+    alert(`Não foi possível excluir a mídia: ${dbError.message}`);
     return;
   }
 
   await supabaseClient.storage.from(MEDIA_BUCKET).remove([image.image_url]);
   activeImages = activeImages.filter((item) => item.id !== imageId);
 
-  if (image.is_cover && activeImages[0]) {
-    await setCoverImage(activeImages[0].id);
+  const nextCover = activeImages.find((media) => !isVideo(media));
+  if (image.is_cover && nextCover) {
+    await setCoverImage(nextCover.id);
     return;
   }
 
@@ -880,7 +986,7 @@ async function persistImageOrder() {
 
   const results = await Promise.all(updates);
   const failed = results.find((result) => result.error);
-  if (failed) alert(`Não foi possível reordenar imagens: ${failed.error.message}`);
+  if (failed) alert(`Não foi possível reordenar as mídias: ${failed.error.message}`);
 }
 
 function handleImageAction(action, imageId) {
