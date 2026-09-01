@@ -2,6 +2,7 @@ const SUPABASE_URL = "https://ulwhmtpduzxjbkqrqesd.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_LLQAnzzF3WFr1Ln5iWPIlw_dtWb3QPH";
 const MEDIA_BUCKET = "aza-media";
 const RESUMABLE_UPLOAD_URL = "https://ulwhmtpduzxjbkqrqesd.storage.supabase.co/storage/v1/upload/resumable";
+const MAX_VIDEO_SIZE_BYTES = 20 * 1024 * 1024;
 
 const supabaseClient = window.supabase?.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -533,7 +534,7 @@ function imageSectionHtml(isNew) {
         <div>
           <span>Fotos e vídeos</span>
           <strong>${mediaCount} arquivo(s) ${isNew ? "selecionado(s)" : "cadastrado(s)"}</strong>
-          <small>${isNew ? "Os arquivos serão enviados junto com o primeiro salvamento." : "Fotos podem ser capa; vídeos aparecem na galeria. Prefira vídeos MP4."}</small>
+          <small>${isNew ? "Os arquivos serão enviados junto com o primeiro salvamento. Vídeos de até 20 MB." : "Fotos podem ser capa; vídeos aparecem na galeria. Prefira MP4 de até 20 MB."}</small>
         </div>
         <label class="upload-button">
           <span data-upload-label>${isNew ? "Selecionar mídias" : "Enviar mídias"}</span>
@@ -600,7 +601,10 @@ function attachImageHandlers() {
   const dropZone = editorForm.querySelector("#drop-zone");
   const list = editorForm.querySelector("#image-list");
 
-  input?.addEventListener("change", () => uploadFiles(input.files));
+  input?.addEventListener("change", () => {
+    uploadFiles(input.files);
+    input.value = "";
+  });
 
   dropZone?.addEventListener("dragover", (event) => {
     event.preventDefault();
@@ -760,14 +764,31 @@ function filePath(file) {
 
 async function uploadFiles(fileList) {
   const selectedFiles = [...fileList];
-  const files = selectedFiles.filter((file) => (
+  const supportedFiles = selectedFiles.filter((file) => (
     file.type.startsWith("image/")
     || file.type.startsWith("video/")
     || /\.(jpe?g|png|gif|webp|avif|mp4|webm|mov|m4v)$/i.test(file.name)
   ));
-  if (selectedFiles.length && !files.length) {
+  if (selectedFiles.length && !supportedFiles.length) {
     alert("Selecione arquivos de imagem ou vídeo.");
   }
+
+  const oversizedVideos = supportedFiles.filter((file) => (
+    mediaType(file) === "video" && file.size > MAX_VIDEO_SIZE_BYTES
+  ));
+
+  if (oversizedVideos.length) {
+    const details = oversizedVideos
+      .map((file) => `• ${file.name} (${(file.size / 1024 / 1024).toFixed(1).replace(".", ",")} MB)`)
+      .join("\n");
+    const heading = oversizedVideos.length === 1
+      ? "Este vídeo é maior que o permitido e não foi enviado:"
+      : "Alguns vídeos são maiores que o permitido e não foram enviados:";
+
+    alert(`${heading}\n\n${details}\n\nO limite é de 20 MB por vídeo. Comprima o arquivo ou escolha um vídeo menor e tente novamente.`);
+  }
+
+  const files = supportedFiles.filter((file) => !oversizedVideos.includes(file));
   if (!files.length || isUploading) return;
 
   if (!activeId) {
